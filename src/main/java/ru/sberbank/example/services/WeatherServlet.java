@@ -3,6 +3,7 @@ package ru.sberbank.example.services;
 import java.io.IOException;
 import java.io.PrintWriter;
 
+import javax.naming.NamingException;
 import javax.servlet.GenericServlet;
 import javax.servlet.Servlet;
 import javax.servlet.ServletConfig;
@@ -17,6 +18,8 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ru.sberbank.example.services.exception.DestinationNotFoundException;
+
 /**
  * Servlet implementation class WeatherServlet
  */
@@ -27,6 +30,8 @@ public class WeatherServlet extends GenericServlet {
 	private static final long serialVersionUID = 1L;
 	private final String APP_ID = "8f56ccda96cd0d0eebfc792dbf952290";
 	private static final Logger LOGGER = LoggerFactory.getLogger(WeatherServlet.class);	
+	
+	private OpenWeatherMapClient client;
 	
 	/**
      * @see GenericServlet#GenericServlet()
@@ -40,7 +45,11 @@ public class WeatherServlet extends GenericServlet {
 	 * @see Servlet#init(ServletConfig)
 	 */
 	public void init(ServletConfig config) throws ServletException {
-		// TODO Auto-generated method stub
+		 try {
+			this.client = new OpenWeatherMapClient(APP_ID);
+		} catch (Exception e) {
+			throw new ServletException(e);
+		} 
 	}
 
 	/**
@@ -52,14 +61,24 @@ public class WeatherServlet extends GenericServlet {
 		PrintWriter out = response.getWriter();
 		
 		if("GET".equals(httpRequest.getMethod())){
-			try {			
-				
-				String cityName = httpRequest.getParameter("cityName");		
-	            				
-		        OpenWeatherMapClient owmc = new OpenWeatherMapClient(APP_ID);
+			
+			if(client==null){
+				httpResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Service was not correctly initialized");
+				return;
+			}
+			
+			String cityName = httpRequest.getParameter("cityName");
+			
+			if((cityName==null)||(cityName.isEmpty())){
+				httpResponse.setContentType("text/plain");
+				httpResponse.sendError(HttpServletResponse.SC_BAD_REQUEST, "Empty city name is not allowed");
+				return;
+			}
+			
+			try {			       
 		        
 		        JSONObject servletResponseJson = new JSONObject();
-				servletResponseJson.put("temperature", owmc.getTempByCity(cityName));		
+				servletResponseJson.put("temperature", client.getTempByCity(cityName));		
 				
 				httpResponse.setContentType("application/json");
 				out.print(servletResponseJson.toString());
@@ -71,7 +90,7 @@ public class WeatherServlet extends GenericServlet {
 				out.flush();
 			}			
 		}else {
-			httpResponse.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Not allowed!");		
+			httpResponse.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Not allowed");		
 		}
 	}
 
