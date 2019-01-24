@@ -9,7 +9,6 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URL;
 
-import javax.annotation.Resource;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.servlet.GenericServlet;
@@ -18,15 +17,14 @@ import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
-import javax.servlet.annotation.WebInitParam;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.sap.cloud.account.TenantContext;
 import com.sap.core.connectivity.api.configuration.ConnectivityConfiguration;
 import com.sap.core.connectivity.api.configuration.DestinationConfiguration;
 
@@ -34,10 +32,8 @@ import com.sap.core.connectivity.api.configuration.DestinationConfiguration;
  * Servlet implementation class WeatherServlet
  */
 @WebServlet(
-		urlPatterns = { "/WeatherServlet" }, 
-		initParams = { 
-				@WebInitParam(name = "AppId", value = "123", description = "Application ID for weather service API")
-		})
+		urlPatterns = { "/WeatherServlet" } 
+		)
 public class WeatherServlet extends GenericServlet {
 	private static final long serialVersionUID = 1L;
 	private final String APP_ID = "8f56ccda96cd0d0eebfc792dbf952290";
@@ -45,8 +41,10 @@ public class WeatherServlet extends GenericServlet {
 	private static final String destinationName = "OpenWeatherMapDestination";
 	private static final Logger LOGGER = LoggerFactory.getLogger(WeatherServlet.class);
 	
+	/*
 	@Resource
     private TenantContext  tenantContext;
+	*/
 	
 	/**
      * @see GenericServlet#GenericServlet()
@@ -73,6 +71,7 @@ public class WeatherServlet extends GenericServlet {
 		
 		if("GET".equals(httpRequest.getMethod())){
 			try {
+				
 				HttpURLConnection urlConnection = null;
 				String cityName = httpRequest.getParameter("cityName");				 
 				
@@ -87,33 +86,37 @@ public class WeatherServlet extends GenericServlet {
 	                return;
 	            }
 	            
-	            // Get the destination URL
-	            String openWeatherURL = String.format("%s?cityName=%s&appid=%s", destConfiguration.getProperty("URL"),cityName,APP_ID);            		
+	            String openWeatherURL = String.format("%s?q=%s&appid=%s", destConfiguration.getProperty("URL"),cityName,APP_ID);            		
+	            
+	            LOGGER.info("URL: "+openWeatherURL);
+	            
 	            URL url = new URL(openWeatherURL);
 	            
 	            String proxyType = destConfiguration.getProperty("ProxyType");
 	            Proxy proxy = getProxy(proxyType);
 	            
+	            LOGGER.info("PROXY: "+proxyType);
+	            
 	            urlConnection = (HttpURLConnection) url.openConnection(proxy);	            
 	            
-	            // Insert the required header in the request for on-premise destinations
-	            injectHeader(urlConnection, proxyType);
+	            LOGGER.info("Connection opened!");
 	            
 	            String weatherResponse = getResponse(urlConnection);
-							
-				//JSONObject jsonObject = new JSONObject();	
-				//jsonObject.put("temperature", "12");		
-				//String result = jsonObject.toString();
-				httpResponse.setContentType("application/json");							  
-				out.print(weatherResponse);				
+
+	            LOGGER.info("Response: "+weatherResponse);
+	            				
+	            JSONObject servletResponseJson = new JSONObject();
+				servletResponseJson.put("temperature", extractTemperature(weatherResponse));		
+				
+				httpResponse.setContentType("application/json");
+				out.print(servletResponseJson.toString());
+				
 			}catch(Exception e) {
 				LOGGER.error("Connectivity operation failed", e);
 				httpResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
 			}finally {
 				out.flush();
-			}
-			
-	out.flush();
+			}			
 		}else {
 			httpResponse.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Not allowed!");		
 		}
@@ -136,6 +139,26 @@ public class WeatherServlet extends GenericServlet {
         return response.toString();
 	}
 	
+	private String extractTemperature(String weatherResponse){
+		JSONObject weatherResponseJson = new JSONObject(weatherResponse);	
+		JSONObject main = null;
+		String result = "Unexpected response from weatherapp service";
+		
+		if(weatherResponseJson.has("main")) {
+			main = weatherResponseJson.getJSONObject("main");
+			if(main.has("temp")) {
+				result = String.valueOf(kelvinToCelsium(main.getDouble("temp")));
+			}
+		}
+		
+		return result; 
+	}
+		
+	private double kelvinToCelsium(double kelvin) {
+		double result = kelvin - 273.15d;
+		result = result * 100;
+		return Math.round(result)/100.0;
+	}
 	
 	private Proxy getProxy(String proxyType) {
         Proxy proxy = Proxy.NO_PROXY;
@@ -160,13 +183,14 @@ public class WeatherServlet extends GenericServlet {
         return proxy;
     }
 
-    private void injectHeader(HttpURLConnection urlConnection, String proxyType) {
+    /*
+	private void injectHeader(HttpURLConnection urlConnection, String proxyType) {
         if (ON_PREMISE_PROXY.equals(proxyType)) {
             // Insert header for on-premise connectivity with the consumer account name
             urlConnection.setRequestProperty("SAP-Connectivity-ConsumerAccount",
                     tenantContext.getTenant().getAccount().getId());
         }
     }
-
+	*/
 	
 }
